@@ -2,14 +2,13 @@
 
 import tkinter as tk
 from tkinter import ttk
-import datetime as dt
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 import pandas as pd
 
 def fetch_data(url):
-    '''
+    """
     fetches data from `url` and marshals into pandas dataframe `df`
 
     looks like this:
@@ -20,7 +19,7 @@ def fetch_data(url):
     3          Pulau Ubin   1.41680  103.96730                               92.3
     4             Sentosa   1.25000  103.82790                               74.2
     5  West Coast Highway   1.28100  103.75400                               86.9
-    '''
+    """
     df = pd.read_json(url, lines=True, orient="Columns")
     timestamp = df['items'][0][0]['timestamp']
     stations_df = pd.json_normalize(df['metadata'][0], record_path='stations')
@@ -34,6 +33,7 @@ class HumidityVisualizer(tk.Tk):
     def __init__(self):
         super().__init__()
         self.url = "https://api.data.gov.sg/v1/environment/relative-humidity"
+        self.refresh_interval = 5*60*1000  # 5 minutes
         self.title("Relative Humidity Visualizer")
         self.df = pd.DataFrame()
         
@@ -49,18 +49,21 @@ class HumidityVisualizer(tk.Tk):
         self.update_graphs(graphs)
 
     def update_graphs(self, graphs=None):
+        """
+        fetches new data and updates the `graphs`
+        """
         df = fetch_data(self.url)
         df.drop([col for col in df.columns if col.startswith('reading_') and col in self.df.columns], axis=1, inplace=True)
         self.df = df if self.df.empty else self.df.merge(df, on=['station_name', 'latitude', 'longitude'], suffixes=('','_'))
         for graph in graphs:
             graph.plot(self.df)
         self.update()
-        self.after(5*60*1000, self.update_graphs, graphs)  # refresh every 5 minutes
+        self.after(self.refresh_interval, self.update_graphs, graphs)
 
     def create_tab(self, notebook, fig, title=None):
-        '''
+        """
         creates a tab in `notebook` with figure `fig`
-        '''
+        """
         tab = ttk.Frame(notebook)
         tab.pack(fill='both', expand=True)
         canvas = FigureCanvasTkAgg(fig, master=tab)
@@ -97,7 +100,6 @@ class HumidityVisualizer(tk.Tk):
                 self.cbar.set_label(self.cbarlabel)
             else:
                 self.cbar.update_normal(scatter)
-            
 
             # label the points
             min_val = df[reading].min()
@@ -112,7 +114,6 @@ class HumidityVisualizer(tk.Tk):
                 self.ax.annotate(label, xy=(row['longitude'], row['latitude']),
                                  xytext=(0, -15), textcoords='offset points',
                                  ha='center', va='center')
-
             return self.fig
 
     class BarPlot:
@@ -159,8 +160,7 @@ class HumidityVisualizer(tk.Tk):
             self.ax.set_title(title)
             self.lines = {}
             self.linewidth = linewidth
-            self.axhminmax_lines = (None, None)
-            self.axhminmax_labels = (None, None)
+            self.axhminmax_lines = ()
 
         def plot(self, df):
             reading_cols = [col for col in df.columns if col.startswith('reading_')]
@@ -179,21 +179,16 @@ class HumidityVisualizer(tk.Tk):
 
             self.ax.xaxis.set_major_locator(mdates.MinuteLocator(byminute=range(0, 60, 5)))
 
-            for i in [self.axhminmax_lines, self.axhminmax_labels]:
-                for j in i:
-                    if j is not None:
-                        j.remove()
-                    
+            for line in self.axhminmax_lines:
+                if line is not None:
+                    line.remove()
 
             # label maximum and minimum over timespan
             min_val = df[reading_cols].min().min()
             max_val = df[reading_cols].max().max()
             self.axhminmax_lines = (self.ax.axhline(min_val, linestyle='--'),
                                     self.ax.axhline(max_val, linestyle='--'))
-            yticks = self.ax.get_yticks().tolist()
-            self.ax.set_yticks(yticks + [max_val, min_val])
-            self.ax.set_yticklabels([str(ytick) for ytick in yticks] + [f'{max_val} <max>', f'{min_val} <min>'])
-            self.axhminmax_labels = self.ax.get_yticklabels()[-2:]
+            self.ax.set_yticks([max_val, min_val], labels=[f'{max_val} <max>', f'{min_val} <min>'], minor=True)
 
             self.ax.legend()
 
