@@ -2,8 +2,9 @@
 
 import tkinter as tk
 from tkinter import ttk
+import datetime as dt
+import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
-import matplotlib.animation as animation
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 import pandas as pd
 
@@ -41,18 +42,20 @@ class HumidityVisualizer(tk.Tk):
         notebook.pack(fill='both', expand=True)
 
         # initialize graphs
-        tabs = [ self.ScatterPlot(), self.BarPlot(), self.LinePlot() ]
-        for graph in tabs:
+        graphs = [self.ScatterPlot(), self.BarPlot(), self.LinePlot()]
+        for graph in graphs:
             self.create_tab(notebook, graph.fig)
 
-        self.update(tabs)
+        self.update_graphs(graphs)
 
-    def update(self, tabs=None):
-        new_df = fetch_data(self.url)
-        self.df = new_df if self.df.empty else self.df.combine_first(new_df)
-        for graph in tabs:
+    def update_graphs(self, graphs=None):
+        df = fetch_data(self.url)
+        df.drop([col for col in df.columns if col.startswith('reading_') and col in self.df.columns], axis=1, inplace=True)
+        self.df = df if self.df.empty else self.df.merge(df, on=['station_name', 'latitude', 'longitude'], suffixes=('','_'))
+        for graph in graphs:
             graph.plot(self.df)
-        self.after(1*6*1000, self.update, tabs)  # refresh every 5 minutes
+        self.update()
+        self.after(5*60*1000, self.update_graphs, graphs)  # refresh every 5 minutes
 
     def create_tab(self, notebook, fig, title=None):
         '''
@@ -84,6 +87,8 @@ class HumidityVisualizer(tk.Tk):
             self.ax.set_title(title)
 
         def plot(self, df):
+            self.ax.clear()
+            
             reading = df.columns[-1]
             scatter = self.ax.scatter(df['longitude'], df['latitude'], c=df[reading], cmap=self.cmap)
 
@@ -92,11 +97,11 @@ class HumidityVisualizer(tk.Tk):
                 self.cbar.set_label(self.cbarlabel)
             else:
                 self.cbar.update_normal(scatter)
-
-            max_val = df[reading].max()
-            min_val = df[reading].min()
+            
 
             # label the points
+            min_val = df[reading].min()
+            max_val = df[reading].max()
             for index, row in df.iterrows():
                 value = row[reading]
                 label = f"{row['station_name']} ({value}%)"
@@ -107,6 +112,7 @@ class HumidityVisualizer(tk.Tk):
                 self.ax.annotate(label, xy=(row['longitude'], row['latitude']),
                                  xytext=(0, -15), textcoords='offset points',
                                  ha='center', va='center')
+
             return self.fig
 
     class BarPlot:
@@ -121,13 +127,15 @@ class HumidityVisualizer(tk.Tk):
             self.ax.set_title(self.title)
 
         def plot(self, df):
+            self.ax.clear()
+
             reading = df.columns[-1]
             bars = self.ax.bar(df['station_name'], df[reading])
 
             # label maximum and minimum
             labels = []
-            max_val = df[reading].max()
             min_val = df[reading].min()
+            max_val = df[reading].max()
             for value in df[reading]:
                 label = str(value)
                 if value == max_val:
@@ -141,7 +149,7 @@ class HumidityVisualizer(tk.Tk):
             return self.fig
 
     class LinePlot:
-        def __init__(self, title='Relative Humidity over Time', xlabel='Time', ylabel='Relative Humidity (%)'):
+        def __init__(self, title='Relative Humidity over Time', xlabel='Time', ylabel='Relative Humidity (%)', linewidth=2):
             self.title = title
             self.xlabel = xlabel
             self.ylabel = ylabel
@@ -149,13 +157,43 @@ class HumidityVisualizer(tk.Tk):
             self.ax.set_xlabel(self.xlabel)
             self.ax.set_ylabel(self.ylabel)
             self.ax.set_title(title)
+            self.lines = {}
+            self.linewidth = linewidth
+            self.axhminmax_lines = (None, None)
+            self.axhminmax_labels = (None, None)
 
         def plot(self, df):
-            # plot the readings
-            for index, row in df.iterrows():
-                reading_cols = [col for col in df.columns if col.startswith('reading_')]
-                readings = row[reading_cols].values
-                self.ax.plot(reading_cols, readings, label=row['station_name'])
+            reading_cols = [col for col in df.columns if col.startswith('reading_')]
+            reading_labels = pd.to_datetime([col.lstrip('reading_') for col in reading_cols])
+            for i, station in df.iterrows():
+                station_name = station['station_name']
+                if station_name not in self.lines:
+                    self.lines[station_name], = self.ax.plot(reading_labels, station[reading_cols],
+                                                             label=station_name, marker='o',
+                                                             linewidth=self.linewidth)
+                else:
+                    self.lines[station_name].set_data(reading_labels, station[reading_cols])
+
+            if len(reading_labels) > 1:
+                self.ax.set_xlim(reading_labels.min(), reading_labels.max())
+
+            self.ax.xaxis.set_major_locator(mdates.MinuteLocator(byminute=range(0, 60, 5)))
+
+            for i in [self.axhminmax_lines, self.axhminmax_labels]:
+                for j in i:
+                    if j is not None:
+                        j.remove()
+                    
+
+            # label maximum and minimum over timespan
+            min_val = df[reading_cols].min().min()
+            max_val = df[reading_cols].max().max()
+            self.axhminmax_lines = (self.ax.axhline(min_val, linestyle='--'),
+                                    self.ax.axhline(max_val, linestyle='--'))
+            yticks = self.ax.get_yticks().tolist()
+            self.ax.set_yticks(yticks + [max_val, min_val])
+            self.ax.set_yticklabels([str(ytick) for ytick in yticks] + [f'{max_val} <max>', f'{min_val} <min>'])
+            self.axhminmax_labels = self.ax.get_yticklabels()[-2:]
 
             self.ax.legend()
 
