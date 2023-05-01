@@ -114,6 +114,8 @@ class HumidityVisualizer(tk.Tk):
                 self.ax.annotate(label, xy=(row['longitude'], row['latitude']),
                                  xytext=(0, -15), textcoords='offset points',
                                  ha='center', va='center')
+            self.fig.canvas.draw()
+
             return self.fig
 
     class BarPlot:
@@ -144,8 +146,8 @@ class HumidityVisualizer(tk.Tk):
                 elif value == min_val:
                     label += ' <min>'
                 labels.append(label)
-
             self.ax.bar_label(bars, labels=labels)
+            self.fig.canvas.draw()
 
             return self.fig
 
@@ -160,7 +162,8 @@ class HumidityVisualizer(tk.Tk):
             self.ax.set_title(title)
             self.lines = {}
             self.linewidth = linewidth
-            self.axhminmax_lines = ()
+            self.axhmin_line = None
+            self.axhmax_line = None
 
         def plot(self, df):
             reading_cols = [col for col in df.columns if col.startswith('reading_')]
@@ -179,18 +182,20 @@ class HumidityVisualizer(tk.Tk):
 
             self.ax.xaxis.set_major_locator(mdates.MinuteLocator(byminute=range(0, 60, 5)))
 
-            for line in self.axhminmax_lines:
-                if line is not None:
-                    line.remove()
-
             # label maximum and minimum over timespan
             min_val = df[reading_cols].min().min()
             max_val = df[reading_cols].max().max()
-            self.axhminmax_lines = (self.ax.axhline(min_val, linestyle='--'),
-                                    self.ax.axhline(max_val, linestyle='--'))
+            if self.axhmin_line is None:
+                self.axhmin_line = self.ax.axhline(min_val, linestyle='--', color='black')
+	    else:
+	        self.axhmin_line.set_ydata([min_val, min_val])
+            if self.axhmax_line is None:
+                self.axhmax_line = self.ax.axhline(max_val, linestyle='--', color='black')
+	    else:
+	        self.axhmax_line.set_ydata([max_val, max_val])
             self.ax.set_yticks([max_val, min_val], labels=[f'{max_val} <max>', f'{min_val} <min>'], minor=True)
-
             self.ax.legend()
+            self.fig.canvas.draw()
 
             return self.fig
 
