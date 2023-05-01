@@ -187,12 +187,12 @@ class HumidityVisualizer(tk.Tk):
             max_val = df[reading_cols].max().max()
             if self.axhmin_line is None:
                 self.axhmin_line = self.ax.axhline(min_val, linestyle='--', color='black')
-	    else:
-	        self.axhmin_line.set_ydata([min_val, min_val])
+            else:
+                self.axhmin_line.set_ydata([min_val, min_val])
             if self.axhmax_line is None:
                 self.axhmax_line = self.ax.axhline(max_val, linestyle='--', color='black')
-	    else:
-	        self.axhmax_line.set_ydata([max_val, max_val])
+            else:
+                self.axhmax_line.set_ydata([max_val, max_val])
             self.ax.set_yticks([max_val, min_val], labels=[f'{max_val} <max>', f'{min_val} <min>'], minor=True)
             self.ax.legend()
             self.fig.canvas.draw()
